@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
@@ -6,46 +6,44 @@ const apiKey = process.env.GEMINI_API_KEY;
 // ---------------------------------------------
 // GEMINI MAIN CLIENT
 // ---------------------------------------------
-export const aiClient = new GoogleGenAI({
-  apiKey,
-});
+export const aiClient = new GoogleGenerativeAI(apiKey);
 
 // ---------------------------------------------
 // EMBEDDINGS CLIENT
 // ---------------------------------------------
+import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
+
 export function makeEmbeddingsClient() {
-  return new GoogleGenerativeAIEmbeddings({
-    apiKey,
-    model: "text-embedding-004",
+  return new HuggingFaceTransformersEmbeddings({
+    modelName: "Xenova/all-MiniLM-L6-v2", // free local model
   });
 }
 
+
 // ---------------------------------------------
-// QUERY REWRITER (Follow-up → standalone)
+// QUERY REWRITER
 // ---------------------------------------------
 export async function rewriteQuery(history = [], question) {
   try {
-    const contents = [
-      ...history,
-      {
-        role: "user",
-        parts: [{ text: question }],
-      },
-    ];
-
-    const response = await aiClient.models.generateContent({
+    const model = aiClient.getGenerativeModel({
       model: "gemini-2.0-flash",
-      contents,
-      config: {
-        systemInstruction: `
-You are a query rewriting expert. 
-Rewrite the user's follow-up question into a complete, standalone question.
-Output ONLY the rewritten question, nothing else.
-        `,
-      },
+      systemInstruction: `
+      You are a query rewriting expert.
+      Convert the follow-up question into a standalone question.
+      Output ONLY the rewritten text without explanation.
+      `,
     });
 
-    return response?.text?.trim() || question;
+    const parts = [
+      ...history.map((msg) => ({ role: msg.role || "user", parts: [{ text: msg.text }] })),
+      { role: "user", parts: [{ text: question }] },
+    ];
+
+    const result = await model.generateContent({
+      contents: parts,
+    });
+
+    return (await result.response.text()).trim() || question;
   } catch (err) {
     console.error("rewriteQuery error:", err);
     return question;
@@ -57,34 +55,32 @@ Output ONLY the rewritten question, nothing else.
 // ---------------------------------------------
 export async function answerWithContext(history = [], question, context) {
   try {
-    const contents = [
-      ...history,
-      {
-        role: "user",
-        parts: [{ text: question }],
-      },
-    ];
-
-    const response = await aiClient.models.generateContent({
+    const model = aiClient.getGenerativeModel({
       model: "gemini-2.0-flash",
-      contents,
-      config: {
-        systemInstruction: `
-You are an expert assistant. 
-You must answer ONLY using the information inside the provided Context.
+      systemInstruction: `
+      You are an expert assistant.
+      Answer the user's question ONLY using the provided context below.
 
-Context:
-${context}
+      Context:
+      ${context}
 
-If the answer is NOT found in the context, reply:
-"I could not find the answer in the provided document."
-        `,
-      },
+      If the answer cannot be found in the context, reply with:
+      "I could not find the answer in the provided document."
+      `,
     });
 
-    return response?.text?.trim() || "";
+    const parts = [
+      ...history.map((msg) => ({ role: msg.role || "user", parts: [{ text: msg.text }] })),
+      { role: "user", parts: [{ text: question }] },
+    ];
+
+    const result = await model.generateContent({
+      contents: parts,
+    });
+
+    return (await result.response.text()).trim();
   } catch (err) {
     console.error("answerWithContext error:", err);
-    return "Error generating answer";
+    return "Error generating answer.";
   }
 }

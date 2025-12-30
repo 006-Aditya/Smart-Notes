@@ -12,50 +12,50 @@ const router = express.Router();
 router.post("/", auth, async (req, res) => {
   try {
     const { question } = req.body;
-    const userId = req.user._id;
+    const userId = req.user._id?.toString();
 
     if (!question?.trim()) {
       return res.status(400).json({ error: "Question is required" });
     }
 
-    // 1) Rewrite for follow-ups
+    // 1️⃣ Rewrite question if follow-up
     const rewrittenQ = await rewriteQuery([], question);
 
-    // 2) Create embedding
+    // 2️⃣ Generate embedding
     const embeddings = makeEmbeddingsClient();
-    const queryVector = await embeddings.embedQuery(rewrittenQ);
+    const [queryVector] = await embeddings.embedDocuments([rewrittenQ]);
 
-    // 3) Query Pinecone (updated SDK syntax)
+    // 3️⃣ Pinecone Search (correct format)
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
     });
 
     const index = pinecone.index(process.env.PINECONE_INDEX_NAME);
 
-    const search = await index.query({
+    const result = await index.namespace(userId).query({
       vector: queryVector,
       topK: 10,
       includeMetadata: true,
-      filter: { userId: String(userId) },
     });
 
-    const matches = search.matches || [];
+    const matches = result.matches || [];
 
-    if (matches.length === 0) {
+    if (!matches.length) {
       return res.json({
-        answer: "I couldn't find anything related to your question in your uploaded notes.",
+        answer:
+          "I couldn't find anything related to your question in your uploaded notes.",
         rewrittenQuestion: rewrittenQ,
         contextChunks: [],
       });
     }
 
-    // 4) Build context
+    // 4️⃣ Build dynamic RAG context
     const context = matches
-      .map((m) => m.metadata?.text || "")
+      .map((m) => m.metadata?.text ?? "")
       .filter(Boolean)
       .join("\n\n---\n\n");
 
-    // 5) Ask Gemini
+    // 5️⃣ Generate final answer with retrieved chunks
     const answer = await answerWithContext([], rewrittenQ, context);
 
     res.json({
@@ -64,9 +64,8 @@ router.post("/", auth, async (req, res) => {
       answer,
       contextChunks: matches,
     });
-
   } catch (err) {
-    console.error("Query Error:", err);
+    console.error("❌ Query Error:", err);
     res.status(500).json({ error: "Server error processing query" });
   }
 });

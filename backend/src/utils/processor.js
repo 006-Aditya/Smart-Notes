@@ -1,6 +1,6 @@
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
 import { Pinecone } from "@pinecone-database/pinecone";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
@@ -10,15 +10,12 @@ const CHUNK_OVERLAP = parseInt(process.env.CHUNK_OVERLAP || "200");
 
 export async function processAndUpsert(filePath, filename, userId) {
   try {
-    // 1️⃣ Load PDF
+    console.log("📄 Loading PDF:", filename);
+
     const loader = new PDFLoader(filePath);
     const rawDocs = await loader.load();
+    if (!rawDocs.length) throw new Error("PDF contains no text");
 
-    if (!rawDocs || rawDocs.length === 0) {
-      throw new Error("PDF contains no text");
-    }
-
-    // 2️⃣ Split into chunks
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: CHUNK_SIZE,
       chunkOverlap: CHUNK_OVERLAP,
@@ -26,13 +23,12 @@ export async function processAndUpsert(filePath, filename, userId) {
 
     const chunkedDocs = await splitter.splitDocuments(rawDocs);
 
-    // 3️⃣ Gemini Embeddings
     const embeddings = new GoogleGenerativeAIEmbeddings({
       apiKey: process.env.GEMINI_API_KEY,
       model: "text-embedding-004",
     });
 
-    // 4️⃣ Pinecone Init (FIXED)
+
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
     });
@@ -41,39 +37,36 @@ export async function processAndUpsert(filePath, filename, userId) {
 
     const vectorIds = [];
 
-    // 5️⃣ Batch create embeddings
     for (let i = 0; i < chunkedDocs.length; i += 20) {
       const batch = chunkedDocs.slice(i, i + 20);
 
-      const vectors = await Promise.all(
-        batch.map(async (doc) => {
-          const text = doc.pageContent || "";
+      const texts = batch.map(doc => doc.pageContent || "");
+      const vectorsEmbeddings = await embeddings.embedDocuments(texts);
 
-          const embedding = await embeddings.embedQuery(text);
+      console.log("📌 Embedding size:", vectorsEmbeddings[0]?.length);
 
-          const vectorId = uuidv4();
-          vectorIds.push(vectorId);
+      const vectors = batch.map((doc, idx) => {
+        const id = uuidv4();
+        vectorIds.push(id); // 🔥 FIXED!!!
 
-          return {
-            id: vectorId,
-            values: embedding,
-            metadata: {
-              userId: String(userId),
-              filename,
-              text: text.slice(0, 500),
-            },
-          };
-        })
-      );
+        return {
+          id,
+          values: vectorsEmbeddings[idx],
+          metadata: {
+            userId: String(userId),
+            filename,
+            text: doc.pageContent.slice(0, 500),
+          },
+        };
+      });
 
-      // 6️⃣ Upsert (FIXED FORMAT)
-      await index.upsert(vectors);
+      await index.namespace(String(userId)).upsert(vectors);
+      console.log(`📌 Upserted ${vectors.length} vectors for`, filename);
     }
 
-    // 7️⃣ Cleanup
     fs.unlink(filePath, () => {});
+    return vectorIds; // now returns actual vector IDs!!
 
-    return vectorIds;
   } catch (err) {
     console.error("❌ Error processing file:", err);
     throw new Error("Failed to process and upload document");

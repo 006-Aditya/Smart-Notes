@@ -20,22 +20,18 @@ router.post("/", auth, upload.single("file"), async (req, res) => {
     const userId = req.user._id;
     const file = req.file;
 
-    if (!file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
+    if (!file) return res.status(400).json({ error: "No file uploaded" });
 
-    // Process PDF → chunk → embed → upsert into Pinecone
-    const pineconeIds = await processAndUpsert(
-      file.path,
-      file.originalname,
-      userId
-    );
+    // 🚀 This returns the vector IDs
+    const pineconeIds = await processAndUpsert(file.path, file.originalname, userId);
 
-    // Save metadata in MongoDB
+    console.log("🔥 Stored Pinecone Vector IDs:", pineconeIds);
+
+    // 🚀 Store them in MongoDB
     const doc = await DocMeta.create({
       userId,
       filename: file.originalname,
-      pineconeIds,
+      pineconeIds: pineconeIds, // 👈 MUST EXIST
       metadata: {
         size: file.size,
         mimetype: file.mimetype,
@@ -48,10 +44,12 @@ router.post("/", auth, upload.single("file"), async (req, res) => {
       docId: doc._id,
       chunks: pineconeIds.length,
     });
+
   } catch (err) {
     console.error("Upload Error:", err);
     res.status(500).json({ error: "Failed to process document" });
   }
 });
+
 
 export default router;
