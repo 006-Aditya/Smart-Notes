@@ -5,38 +5,57 @@ import { Pinecone } from "@pinecone-database/pinecone";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 
-const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || "1000");
-const CHUNK_OVERLAP = parseInt(process.env.CHUNK_OVERLAP || "200");
+const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || "500");
+const CHUNK_OVERLAP = parseInt(process.env.CHUNK_OVERLAP || "100");
 
 export async function processAndUpsert(filePath, filename, userId) {
   try {
     console.log("📄 Loading PDF:", filename);
 
+    /* -----------------------------
+       1️⃣ Load PDF
+    ----------------------------- */
     const loader = new PDFLoader(filePath);
     const rawDocs = await loader.load();
     if (!rawDocs.length) throw new Error("PDF contains no text");
 
+    const cleanDocs = rawDocs.filter(doc =>
+    doc.pageContent.length > 200 &&
+    !doc.pageContent.toLowerCase().includes("preface")
+  );
+
+
+    /* -----------------------------
+       2️⃣ Split into chunks
+    ----------------------------- */
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: CHUNK_SIZE,
       chunkOverlap: CHUNK_OVERLAP,
     });
 
-    const chunkedDocs = await splitter.splitDocuments(rawDocs);
+    const chunkedDocs = await splitter.splitDocuments(cleanDocs);
 
-    const embeddings = new GoogleGenerativeAIEmbeddings({
-      apiKey: process.env.GEMINI_API_KEY,
-      model: "text-embedding-004",
+    /* -----------------------------
+       3️⃣ Embeddings (MiniLM)
+    ----------------------------- */
+    const embeddings = new HuggingFaceTransformersEmbeddings({
+      modelName: "Xenova/all-mpnet-base-v2", // 768-dim
     });
 
 
+    /* -----------------------------
+       4️⃣ Pinecone Init
+    ----------------------------- */
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
     });
 
     const index = pinecone.index(process.env.PINECONE_INDEX_NAME);
-
     const vectorIds = [];
 
+    /* -----------------------------
+       5️⃣ Embed + Upsert in batches
+    ----------------------------- */
     for (let i = 0; i < chunkedDocs.length; i += 20) {
       const batch = chunkedDocs.slice(i, i + 20);
 
@@ -47,7 +66,7 @@ export async function processAndUpsert(filePath, filename, userId) {
 
       const vectors = batch.map((doc, idx) => {
         const id = uuidv4();
-        vectorIds.push(id); // 🔥 FIXED!!!
+        vectorIds.push(id);
 
         return {
           id,
@@ -64,8 +83,11 @@ export async function processAndUpsert(filePath, filename, userId) {
       console.log(`📌 Upserted ${vectors.length} vectors for`, filename);
     }
 
+    /* -----------------------------
+       6️⃣ Cleanup
+    ----------------------------- */
     fs.unlink(filePath, () => {});
-    return vectorIds; // now returns actual vector IDs!!
+    return vectorIds;
 
   } catch (err) {
     console.error("❌ Error processing file:", err);

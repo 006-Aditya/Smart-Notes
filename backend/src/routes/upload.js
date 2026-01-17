@@ -6,50 +6,53 @@ import { processAndUpsert } from "../utils/processor.js";
 
 const router = express.Router();
 
-// Configure multer for file uploads
+/* -------------------- MULTER CONFIG -------------------- */
 const upload = multer({
   dest: "uploads/",
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
 });
 
-// ---------------------------------------------
-// UPLOAD DOCUMENT
-// ---------------------------------------------
+/* -------------------- UPLOAD DOCUMENT -------------------- */
 router.post("/", auth, upload.single("file"), async (req, res) => {
   try {
-    const userId = req.user._id;
+    // ✅ PostgreSQL / Sequelize user id
+    const userId = req.user.id;
     const file = req.file;
 
-    if (!file) return res.status(400).json({ error: "No file uploaded" });
+    if (!file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
 
-    // 🚀 This returns the vector IDs
-    const pineconeIds = await processAndUpsert(file.path, file.originalname, userId);
+    // 🔹 Process PDF → embeddings → Pinecone
+    const pineconeIds = await processAndUpsert(
+      file.path,
+      file.originalname,
+      userId
+    );
 
-    console.log("🔥 Stored Pinecone Vector IDs:", pineconeIds);
-
-    // 🚀 Store them in MongoDB
+    // 🔹 Store metadata in PostgreSQL
     const doc = await DocMeta.create({
       userId,
       filename: file.originalname,
-      pineconeIds: pineconeIds, // 👈 MUST EXIST
+      pineconeIds,
       metadata: {
         size: file.size,
         mimetype: file.mimetype,
       },
     });
 
-    res.json({
+    return res.json({
       success: true,
       message: "Document uploaded and processed successfully",
-      docId: doc._id,
+      docId: doc.id,              
       chunks: pineconeIds.length,
     });
-
   } catch (err) {
     console.error("Upload Error:", err);
-    res.status(500).json({ error: "Failed to process document" });
+    return res.status(500).json({
+      error: "Failed to process document",
+    });
   }
 });
-
 
 export default router;

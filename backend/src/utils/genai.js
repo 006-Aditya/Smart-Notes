@@ -1,84 +1,92 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
-
-const apiKey = process.env.GEMINI_API_KEY;
-
-// ---------------------------------------------
-// GEMINI MAIN CLIENT
-// ---------------------------------------------
-export const aiClient = new GoogleGenerativeAI(apiKey);
-
-// ---------------------------------------------
-// EMBEDDINGS CLIENT
-// ---------------------------------------------
+import { pipeline } from "@xenova/transformers";
 import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
 
+/* ---------------------------------------------
+   EMBEDDINGS
+--------------------------------------------- */
 export function makeEmbeddingsClient() {
   return new HuggingFaceTransformersEmbeddings({
-    modelName: "Xenova/all-MiniLM-L6-v2", // free local model
+    modelName: "Xenova/all-mpnet-base-v2", // ✅ 768-dim
   });
 }
 
+/* ---------------------------------------------
+   LLM SINGLETON (Flan-T5 Small - ONNX)
+--------------------------------------------- */
+let textGenPipeline = null;
 
-// ---------------------------------------------
-// QUERY REWRITER
-// ---------------------------------------------
+async function getTextGenerator() {
+  if (!textGenPipeline) {
+    textGenPipeline = await pipeline(
+      "text2text-generation",
+      "Xenova/flan-t5-small" 
+    );
+  }
+  return textGenPipeline;
+}
+
+/* ---------------------------------------------
+   QUERY REWRITER
+--------------------------------------------- */
 export async function rewriteQuery(history = [], question) {
   try {
-    const model = aiClient.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: `
-      You are a query rewriting expert.
-      Convert the follow-up question into a standalone question.
-      Output ONLY the rewritten text without explanation.
-      `,
-    });
+    const generator = await getTextGenerator();
 
-    const parts = [
-      ...history.map((msg) => ({ role: msg.role || "user", parts: [{ text: msg.text }] })),
-      { role: "user", parts: [{ text: question }] },
-    ];
+    const prompt = `
+Rewrite the question into a clear, standalone question.
+Do NOT add extra information.
 
-    const result = await model.generateContent({
-      contents: parts,
-    });
+Question:
+${question}
 
-    return (await result.response.text()).trim() || question;
+Standalone Question:
+`;
+
+    const result = await generator(prompt, { max_new_tokens: 64 });
+    const rewritten = result[0]?.generated_text?.trim();
+
+    return rewritten && rewritten.length > 5 ? rewritten : question;
   } catch (err) {
     console.error("rewriteQuery error:", err);
     return question;
   }
 }
 
-// ---------------------------------------------
-// RAG ANSWER GENERATION USING CONTEXT
-// ---------------------------------------------
+/* ---------------------------------------------
+   FINAL RAG ANSWER GENERATION 
+--------------------------------------------- */
 export async function answerWithContext(history = [], question, context) {
   try {
-    const model = aiClient.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: `
-      You are an expert assistant.
-      Answer the user's question ONLY using the provided context below.
+    const generator = await getTextGenerator();
 
-      Context:
-      ${context}
+    const prompt = `
+You are a helpful academic assistant.
 
-      If the answer cannot be found in the context, reply with:
-      "I could not find the answer in the provided document."
-      `,
+INSTRUCTIONS (do not repeat these):
+- Use your own words
+- Do not copy text verbatim
+- Do not repeat instructions
+- Write a clean, well-structured answer
+
+REFERENCE CONTEXT:
+${context}
+
+QUESTION:
+${question}
+
+ANSWER (start here):
+`;
+
+
+    const result = await generator(prompt, {
+      max_new_tokens: 700,     
+      early_stopping: true,    // stop when answer is complete
     });
 
-    const parts = [
-      ...history.map((msg) => ({ role: msg.role || "user", parts: [{ text: msg.text }] })),
-      { role: "user", parts: [{ text: question }] },
-    ];
 
-    const result = await model.generateContent({
-      contents: parts,
-    });
+    return result[0]?.generated_text?.trim() ||
+      "I could not find the answer in the provided document.";
 
-    return (await result.response.text()).trim();
   } catch (err) {
     console.error("answerWithContext error:", err);
     return "Error generating answer.";

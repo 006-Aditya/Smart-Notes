@@ -29,7 +29,6 @@ export default function Upload() {
 
       setStatus(`Uploaded! Processed chunks: ${res.data.chunks}`);
 
-      // Optional redirect to query page
       setTimeout(() => {
         window.location.href = "/query";
       }, 800);

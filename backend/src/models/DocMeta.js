@@ -1,13 +1,36 @@
-import mongoose from "mongoose";
+import { DataTypes } from "sequelize";
+import { sequelize } from "../config/db.js";
+import User from "./User.js";
 
-const DocMetaSchema = new mongoose.Schema(
+const DocMeta = sequelize.define(
+  "DocMeta",
   {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    filename: { type: String, required: true },
-    pineconeIds: { type: [String], default: [] }, // all vector IDs stored in pinecone
-    metadata: { type: Object, default: {} },      // file size, page count, etc.
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    filename: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    pineconeIds: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      defaultValue: [],
+    },
+    metadata: {
+      type: DataTypes.JSONB,
+      defaultValue: {},
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    tableName: "documents",
+  }
 );
 
-export default mongoose.model("DocMeta", DocMetaSchema);
+// Relations
+User.hasMany(DocMeta, { foreignKey: "userId" });
+DocMeta.belongsTo(User, { foreignKey: "userId" });
+
+export default DocMeta;

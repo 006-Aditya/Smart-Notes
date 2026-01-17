@@ -3,9 +3,8 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
 
-import { setToken } from "./services/api.js";
+import { setToken } from "./services/api"; 
 
-// Load JWT token from localStorage (if user already logged in)
 const token = localStorage.getItem("token");
 if (token) {
   setToken(token);
