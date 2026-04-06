@@ -12,9 +12,6 @@ export async function processAndUpsert(filePath, filename, userId) {
   try {
     console.log("📄 Loading PDF:", filename);
 
-    /* -----------------------------
-       1️⃣ Load PDF
-    ----------------------------- */
     const loader = new PDFLoader(filePath);
     const rawDocs = await loader.load();
     if (!rawDocs.length) throw new Error("PDF contains no text");
@@ -24,28 +21,16 @@ export async function processAndUpsert(filePath, filename, userId) {
     !doc.pageContent.toLowerCase().includes("preface")
   );
 
-
-    /* -----------------------------
-       2️⃣ Split into chunks
-    ----------------------------- */
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: CHUNK_SIZE,
       chunkOverlap: CHUNK_OVERLAP,
     });
-
     const chunkedDocs = await splitter.splitDocuments(cleanDocs);
 
-    /* -----------------------------
-       3️⃣ Embeddings (MiniLM)
-    ----------------------------- */
     const embeddings = new HuggingFaceTransformersEmbeddings({
       modelName: "Xenova/all-mpnet-base-v2", // 768-dim
     });
 
-
-    /* -----------------------------
-       4️⃣ Pinecone Init
-    ----------------------------- */
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
     });
@@ -53,9 +38,6 @@ export async function processAndUpsert(filePath, filename, userId) {
     const index = pinecone.index(process.env.PINECONE_INDEX_NAME);
     const vectorIds = [];
 
-    /* -----------------------------
-       5️⃣ Embed + Upsert in batches
-    ----------------------------- */
     for (let i = 0; i < chunkedDocs.length; i += 20) {
       const batch = chunkedDocs.slice(i, i + 20);
 
@@ -83,9 +65,6 @@ export async function processAndUpsert(filePath, filename, userId) {
       console.log(`📌 Upserted ${vectors.length} vectors for`, filename);
     }
 
-    /* -----------------------------
-       6️⃣ Cleanup
-    ----------------------------- */
     fs.unlink(filePath, () => {});
     return vectorIds;
 

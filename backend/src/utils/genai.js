@@ -1,39 +1,39 @@
-import { pipeline } from "@xenova/transformers";
+import ollama from "ollama";
 import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
 
-/* ---------------------------------------------
-   EMBEDDINGS
---------------------------------------------- */
 export function makeEmbeddingsClient() {
   return new HuggingFaceTransformersEmbeddings({
-    modelName: "Xenova/all-mpnet-base-v2", // ✅ 768-dim
+    modelName: "Xenova/all-mpnet-base-v2",
   });
 }
 
-/* ---------------------------------------------
-   LLM SINGLETON (Flan-T5 Small - ONNX)
---------------------------------------------- */
-let textGenPipeline = null;
+const MODEL = "ministral-3:3b-cloud";
 
-async function getTextGenerator() {
-  if (!textGenPipeline) {
-    textGenPipeline = await pipeline(
-      "text2text-generation",
-      "Xenova/flan-t5-small" 
-    );
+async function callOllama(prompt) {
+  try {
+    const response = await ollama.chat({
+      model: MODEL,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
+
+    return response?.message?.content || "";
+
+  } catch (err) {
+    console.error("❌ Ollama SDK error:", err.message);
+
+    return "Sorry, the AI service is temporarily unavailable.";
   }
-  return textGenPipeline;
 }
 
-/* ---------------------------------------------
-   QUERY REWRITER
---------------------------------------------- */
 export async function rewriteQuery(history = [], question) {
   try {
-    const generator = await getTextGenerator();
-
     const prompt = `
-Rewrite the question into a clear, standalone question.
+Rewrite the question into a clear standalone question.
 Do NOT add extra information.
 
 Question:
@@ -42,50 +42,54 @@ ${question}
 Standalone Question:
 `;
 
-    const result = await generator(prompt, { max_new_tokens: 64 });
-    const rewritten = result[0]?.generated_text?.trim();
+    const result = await callOllama(prompt);
 
-    return rewritten && rewritten.length > 5 ? rewritten : question;
+    if (!result || result.trim().length < 5) {
+      return question;
+    }
+
+    return result.trim();
+
   } catch (err) {
     console.error("rewriteQuery error:", err);
     return question;
   }
 }
 
-/* ---------------------------------------------
-   FINAL RAG ANSWER GENERATION 
---------------------------------------------- */
 export async function answerWithContext(history = [], question, context) {
   try {
-    const generator = await getTextGenerator();
+    const trimmedContext = context.slice(0, 3000);
 
     const prompt = `
 You are a helpful academic assistant.
 
-INSTRUCTIONS (do not repeat these):
-- Use your own words
-- Do not copy text verbatim
-- Do not repeat instructions
-- Write a clean, well-structured answer
+Answer ONLY using the provided context.
+If the answer is not present, say "Not found in document".
 
-REFERENCE CONTEXT:
-${context}
+Give a detailed, well-structured explanation:
+- Explain concepts clearly
+- Include key points
+- Add examples if possible from context
+- Use paragraphs or bullet points where helpful
+
+CONTEXT:
+${trimmedContext}
 
 QUESTION:
 ${question}
 
-ANSWER (start here):
+DETAILED ANSWER:
 `;
 
+    console.log("🧠 Prompt length:", prompt.length);
 
-    const result = await generator(prompt, {
-      max_new_tokens: 700,     
-      early_stopping: true,    // stop when answer is complete
-    });
+    const result = await callOllama(prompt);
 
+    if (!result || result.trim().length === 0) {
+      return "No answer generated. Try again.";
+    }
 
-    return result[0]?.generated_text?.trim() ||
-      "I could not find the answer in the provided document.";
+    return result.trim();
 
   } catch (err) {
     console.error("answerWithContext error:", err);
