@@ -20,18 +20,18 @@ router.post("/", auth, async (req, res) => {
     }
 
     /* ---------------------------------
-       1️⃣ Rewrite question
+      Rewrite question
     ---------------------------------- */
     const rewrittenQ = await rewriteQuery([], question);
 
     /* ---------------------------------
-       2️⃣ Generate embedding
+      Generate embedding
     ---------------------------------- */
     const embeddings = makeEmbeddingsClient();
     const [queryVector] = await embeddings.embedDocuments([rewrittenQ]);
 
     /* ---------------------------------
-       3️⃣ Pinecone Search
+      Pinecone Search
     ---------------------------------- */
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY,
@@ -57,10 +57,10 @@ router.post("/", auth, async (req, res) => {
     }
 
     /* ---------------------------------
-       4️⃣ FILTER + LIMIT 
+      FILTER + LIMIT 
     ---------------------------------- */
     const filteredChunks = matches
-      .filter(m => m.score >= 0.3)   // similarity 
+      .filter(m => m.score >= 0.5)   // similarity 
       .slice(0, 5);                 
 
     if (!filteredChunks.length) {
@@ -73,7 +73,7 @@ router.post("/", auth, async (req, res) => {
     }
 
     /* ---------------------------------
-       5️⃣ Build RAG context
+      Build RAG context
     ---------------------------------- */
     const context = filteredChunks
       .map(
@@ -82,12 +82,12 @@ router.post("/", auth, async (req, res) => {
       .join("\n\n");
 
     /* ---------------------------------
-       6️⃣ Generate final answer
+       Generate final answer
     ---------------------------------- */
     const answer = await answerWithContext([], rewrittenQ, context);
 
     /* ---------------------------------
-       7️⃣ Send response
+       Send response
     ---------------------------------- */
     return res.json({
       question,

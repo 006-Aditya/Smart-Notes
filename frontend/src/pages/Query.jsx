@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import api from "../services/api";
+import ReactMarkdown from "react-markdown";
 
 export default function Query() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState(null);
   const [chunks, setChunks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [docQuestions, setDocQuestions] = useState([]);
 
   const handleAsk = async (e) => {
     e.preventDefault();
@@ -19,22 +23,119 @@ export default function Query() {
       const res = await api.post("/query", { question });
 
       setAnswer(res.data.answer);
-      setChunks(res.data.contextChunks || []);
+      setChunks(res.data.sources || []);
     } catch (err) {
-      console.error(err);
-      setAnswer(
-        err.response?.data?.error || "Something went wrong. Try again."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+        console.error(err);
+        setAnswer(
+          err.response?.data?.error || "Something went wrong. Try again."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    useEffect(() => {
+      const savedQuestion = localStorage.getItem("selectedQuestion");
+
+      if (!savedQuestion) return;
+
+      setQuestion(savedQuestion);
+      localStorage.removeItem("selectedQuestion");
+
+      // call API directly
+      const fetchAnswer = async () => {
+        try {
+          setLoading(true);
+          setAnswer(null);
+          setChunks([]);
+
+          const res = await api.post("/query", { question: savedQuestion });
+
+          setAnswer(res.data.answer);
+          setChunks(res.data.sources || []);
+        } catch (err) {
+          console.error(err);
+          setAnswer(
+            err.response?.data?.error || "Something went wrong. Try again."
+          );
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchAnswer();
+    }, []);
+
+    useEffect(() => {
+      const fetchDocs = async () => {
+        try {
+          const res = await api.get("/upload");
+          setDocuments(res.data);
+        } catch (err) {
+          console.error(err);
+        }
+      };
+
+      fetchDocs();
+    }, []);
+    
+    const handleDocClick = (doc) => {
+      setSelectedDoc(doc.id);
+      setDocQuestions(doc.expectedQuestions || []);
+    };
 
     return (
     <div className="max-w-3xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">
         Ask Your Notes
       </h1>
+
+      {documents.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-2">
+            📂 Your Documents
+          </h2>
+
+          <ul className="space-y-2">
+            {documents.map((doc) => (
+              <li
+                key={doc.id}
+                onClick={() => handleDocClick(doc)}
+                className={`p-2 rounded cursor-pointer ${
+                  selectedDoc === doc.id
+                    ? "bg-blue-200"
+                    : "bg-gray-100 hover:bg-blue-100"
+                }`}
+              >
+                📄 {doc.filename}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {docQuestions.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-2">
+            📚 Questions from Document
+          </h2>
+
+          <ul className="space-y-2">
+            {docQuestions.map((q, i) => (
+              <li
+                key={i}
+                className="bg-gray-100 p-2 rounded cursor-pointer hover:bg-blue-100"
+                onClick={() => {
+                  setQuestion(q);
+                  setTimeout(() => handleAsk({ preventDefault: () => {} }), 200);
+                }}
+              >
+                {q}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Question Input */}
       <form
@@ -69,9 +170,11 @@ export default function Query() {
             🤖 Answer
           </h2>
 
-          <p className="text-gray-900 leading-relaxed whitespace-pre-wrap">
-            {answer}
-          </p>
+          <div className="bg-white border rounded-lg p-6 shadow-sm">
+            <div className="prose max-w-none">
+              <ReactMarkdown>{answer}</ReactMarkdown>
+            </div>
+          </div>
         </div>
       )}
 
@@ -95,12 +198,12 @@ export default function Query() {
                       </span>
 
                       <span className="text-xs text-gray-500">
-                        Similarity: {chunk.score.toFixed(2)}
+                        Similarity: {chunk?.score ? chunk.score.toFixed(2) : "N/A"}
                       </span>
                     </div>
 
                     <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
-                      {chunk.metadata?.text}
+                      {chunk.text}
                     </p>
                   </div>
               ))}

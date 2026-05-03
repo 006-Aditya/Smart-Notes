@@ -18,6 +18,13 @@ const DocMeta = sequelize.define(
       type: DataTypes.ARRAY(DataTypes.STRING),
       defaultValue: [],
     },
+
+    expectedQuestions: {
+      type: DataTypes.JSONB,   // store array of questions
+      allowNull: true,
+      defaultValue: [],
+    },
+
     metadata: {
       type: DataTypes.JSONB,
       defaultValue: {},

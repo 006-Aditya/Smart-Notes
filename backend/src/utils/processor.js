@@ -4,6 +4,7 @@ import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddin
 import { Pinecone } from "@pinecone-database/pinecone";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
+import { generateExpectedQuestions } from "./generateQuestions.js";
 
 const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || "500");
 const CHUNK_OVERLAP = parseInt(process.env.CHUNK_OVERLAP || "100");
@@ -11,15 +12,27 @@ const CHUNK_OVERLAP = parseInt(process.env.CHUNK_OVERLAP || "100");
 export async function processAndUpsert(filePath, filename, userId) {
   try {
     console.log("📄 Loading PDF:", filename);
-
+    
     const loader = new PDFLoader(filePath);
     const rawDocs = await loader.load();
     if (!rawDocs.length) throw new Error("PDF contains no text");
 
     const cleanDocs = rawDocs.filter(doc =>
-    doc.pageContent.length > 200 &&
-    !doc.pageContent.toLowerCase().includes("preface")
-  );
+      doc.pageContent.length > 200 &&
+      !doc.pageContent.toLowerCase().includes("preface")
+    );
+
+    // Combine text for question generation
+    const combinedText = cleanDocs
+      .slice(0, 10) 
+      .map(doc => doc.pageContent)
+      .join(" ")
+      .slice(0, 4000);
+
+    // Generate expected questions using Ollama
+    const questions = await generateExpectedQuestions(combinedText) || [];
+
+    console.log("🧠 Generated Questions:", questions.length);
 
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: CHUNK_SIZE,
@@ -66,7 +79,10 @@ export async function processAndUpsert(filePath, filename, userId) {
     }
 
     fs.unlink(filePath, () => {});
-    return vectorIds;
+    return {
+      vectorIds,
+      questions
+    };
 
   } catch (err) {
     console.error("❌ Error processing file:", err);
