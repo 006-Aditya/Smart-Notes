@@ -8,6 +8,18 @@ export default function Navbar() {
     localStorage.removeItem("token");
     window.location.href = "/";
   };
+ 
+  const navLink = (path, label) => (
+    <Link
+      to={path}
+      className={`hover:text-blue-400 transition-colors ${
+        location.pathname === path ? "text-blue-400" : ""
+      }`}
+    >
+      {label}
+    </Link>
+  );
+ 
 
   return (
     <nav className="w-full bg-gray-900 text-white p-4 mb-6 shadow">
@@ -59,6 +71,15 @@ export default function Navbar() {
                 }`}
               >
                 Ask
+              </Link>
+
+              <Link
+                to="/study-plan"
+                className={`hover:text-blue-400 ${
+                  location.pathname === "/study-plan" ? "text-blue-400" : ""
+                }`}
+              >
+                Study Plan
               </Link>
 
               {/* Logout Button */}

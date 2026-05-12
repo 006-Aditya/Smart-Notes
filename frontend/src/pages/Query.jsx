@@ -130,7 +130,9 @@ export default function Query() {
                   setTimeout(() => handleAsk({ preventDefault: () => {} }), 200);
                 }}
               >
-                {q}
+                <div className="prose max-w-none text-gray-800">
+                  <ReactMarkdown>{q}</ReactMarkdown>
+                </div>
               </li>
             ))}
           </ul>

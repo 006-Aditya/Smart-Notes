@@ -5,6 +5,7 @@ import Register from "./pages/Register";
 import Upload from "./pages/Upload";
 import Query from "./pages/Query";
 import Navbar from "./pages/Navbar";
+import StudyPlan from "./pages/StudyPlan";
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem("token");
@@ -38,6 +39,15 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Query />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/study-plan"
+          element={
+            <ProtectedRoute>
+              <StudyPlan />
             </ProtectedRoute>
           }
         />

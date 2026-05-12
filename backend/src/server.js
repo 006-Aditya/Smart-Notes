@@ -9,6 +9,7 @@ import { connectDB, sequelize } from "./config/db.js";
 import authRoutes from "./routes/auth.js";
 import uploadRoutes from "./routes/upload.js";
 import queryRoutes from "./routes/query.js";
+import studyPlanRoutes from "./routes/studyPlan.js";
 
 const app = express();
 
@@ -21,6 +22,7 @@ await sequelize.sync({ alter: true });
 app.use("/api/auth", authRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/query", queryRoutes);
+app.use("/api/study-plans", studyPlanRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
